@@ -1,38 +1,45 @@
-from flask import Flask, jsonify, send_file
-from flask_cors import CORS  
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import io
+from flask import Flask, request, send_file, Response
+from io import BytesIO
+from openbb import obb
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes in the Flask app
+obb.user.preferences.output_type = "dataframe"
 
-# Sample data
-data = [
-    {"id": "1", "description": "Underdog Win", "probability": 0.25},
-    {"id": "2", "description": "Narrow Win", "probability": 0.55},
-    {"id": "3", "description": "Blowout", "probability": 0.85},
-    {"id": "4", "description": "Upset", "probability": 0.40}
-]
+@app.route("/api/stock-chart")
+def stock_chart():
+    ticker = request.args.get("ticker", default="AAPL", type=str)
 
-@app.route('/predictions')
-def get_predictions():
-    return jsonify(data)
+    try:
+        # Fetch data using OpenBB
+        stock_df = obb.equity.price.historical(ticker.upper(), interval="1d")
+        print(f"Fetched data for {ticker.upper()}")
+        print(stock_df.head())
 
-@app.route('/chart')
-def get_chart():
-    labels = [item["description"] for item in data]
-    values = [item["probability"] for item in data]
+        if stock_df.empty:
+            return Response("No data found for ticker.", status=404)
 
-    plt.figure(figsize=(6, 4))
-    plt.bar(labels, values, color='skyblue')
-    plt.ylim(0, 1)
-    plt.ylabel("Probability")
-    plt.title("Prediction Probabilities")
+        # Plot closing prices
+        plt.figure(figsize=(10, 5))
+        plt.plot(stock_df.index, stock_df["close"], label="Close Price")
+        plt.title(f"{ticker.upper()} Closing Prices")
+        plt.xlabel("Date")
+        plt.ylabel("Price")
+        plt.grid(True)
+        plt.legend()
 
-    img = io.BytesIO()
-    plt.tight_layout()
-    plt.savefig(img, format='png')
-    img.seek(0)
-    plt.close()
+        # Save chart to a BytesIO stream
+        img = BytesIO()
+        plt.savefig(img, format="png")
+        img.seek(0)
+        plt.close()
 
-    return send_file(img, mimetype='image/png')
+        return send_file(img, mimetype="image/png")
+
+    except Exception as e:
+        return Response(f"Error: {str(e)}", status=500)
+
+if __name__ == "__main__":
+    app.run(debug=True)
