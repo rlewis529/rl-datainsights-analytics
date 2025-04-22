@@ -8,6 +8,10 @@ import os
 from dotenv import load_dotenv
 import finnhub
 from flask_cors import CORS
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+nltk.download('vader_lexicon')
 
 load_dotenv()
 finnhub_client = finnhub.Client(api_key=os.getenv("FINNHUB_API_KEY"))
@@ -85,11 +89,24 @@ def company_news():
         if not news:
             return Response("No news found for the given date range.", status=404)
 
+        sia = SentimentIntensityAnalyzer()
+        scored_news = []
+        for item in news:
+            title = item.get("headline", "")
+            summary = item.get("summary", "")
+            text = f"{title}. {summary}"
+            sentiment = sia.polarity_scores(text)
+            item["vader_sentiment"] = sentiment["compound"]  # -1 to 1 score
+            scored_news.append(item)
+
+        avg_sentiment = sum(n["vader_sentiment"] for n in scored_news) / len(scored_news)
+
         return {
             "ticker": ticker.upper(),
             "from": start_date,
             "to": end_date,
-            "articles": news
+            "articles": scored_news,
+            "average_sentiment": avg_sentiment
         }
 
     except Exception as e:
