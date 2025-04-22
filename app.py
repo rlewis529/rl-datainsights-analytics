@@ -4,8 +4,17 @@ import matplotlib.pyplot as plt
 from flask import Flask, request, send_file, Response
 from io import BytesIO
 from openbb import obb
+import os
+from dotenv import load_dotenv
+import finnhub
+from flask_cors import CORS
+
+load_dotenv()
+finnhub_client = finnhub.Client(api_key=os.getenv("FINNHUB_API_KEY"))
 
 app = Flask(__name__)
+# CORS(app)
+CORS(app, origins=["http://localhost:4200"])
 obb.user.preferences.output_type = "dataframe"
 
 @app.route("/api/stock-chart")
@@ -23,7 +32,7 @@ def stock_chart():
         print(stock_df.head())
 
         if stock_df.empty:
-            return Response("No data found for ticker.", status=404)        
+            return Response("No data found for ticker.", status=404)   
 
         # Create figure and subplots
         fig, (ax1, ax2) = plt.subplots(
@@ -61,6 +70,30 @@ def stock_chart():
     except Exception as e:
         return Response(f"Error: {str(e)}", status=500)
 
+@app.route("/api/company-news")
+def company_news():
+    ticker = request.args.get("ticker", default="AAPL", type=str)
+    start_date = request.args.get("start", default=None, type=str)
+    end_date = request.args.get("end", default=None, type=str)
+
+    if not start_date or not end_date:
+        return Response("Start and end dates are required.", status=400)
+
+    try:
+        news = finnhub_client.company_news(ticker.upper(), _from=start_date, to=end_date)
+
+        if not news:
+            return Response("No news found for the given date range.", status=404)
+
+        return {
+            "ticker": ticker.upper(),
+            "from": start_date,
+            "to": end_date,
+            "articles": news
+        }
+
+    except Exception as e:
+        return Response(f"Error: {str(e)}", status=500)
 
 if __name__ == "__main__":
     app.run(debug=True)
